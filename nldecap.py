@@ -2,6 +2,12 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=locally-disabled,invalid-name
 # FIXME endianness issues (probably)
+
+# Copyright © 2017 Étienne Noss
+# This work is free. You can redistribute it and/or modify it under the
+# terms of the Do What The Fuck You Want To Public License, Version 2,
+# as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
+
 """Parse pcaps containing rtnetlink messages and display them.
 
 These pcaps are typically obtained by capturing on a nlmon interface.
