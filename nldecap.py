@@ -132,7 +132,9 @@ def main():
     psr = ArgumentParser(description=__doc__.splitlines()[0])
     psr.add_argument("pcap", type=FileType("rb"),
                      help="The pcap file to read, or - for stdin")
-    psr.add_argument("-t", "--tree", help="pretty-print messages like tree(1)",
+    psr.add_argument("-p", "--pprint",
+                     help="use pprint() for pretty-printing messages instead "
+                          "of the builtin tree-like display",
                      default=False, action="store_true")
     psr.add_argument("-l", "--log-level", choices=LOG_LEVELS, default="info",
                      help="Log level. 'info' (the default) prints a header "
@@ -156,6 +158,9 @@ def main():
 
     # Use the built in marshal for decoding
     marshal = MarshalRtnl()
+
+    # The function that will be used for printing
+    print_func = pprint if args.pprint else nl_pprint
 
     # Loop as long as we don't hit EOF
     pkt_count = 0
@@ -204,7 +209,6 @@ def main():
             LOG.warn("[packet %d] could not parse %r", pkt_count, pkt_data)
             continue
 
-        print_func = nl_pprint if args.tree else pprint
         for msg_num, msg in enumerate(messages, start=1):
             msg_type = MSG_MAP.get(msg["header"]["type"], "unknown type")
             if args.filter and msg_type not in args.filter:
