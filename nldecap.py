@@ -72,6 +72,8 @@ def nl_pprint(obj, where=stdout, prefix=None):
     """
     newline = "\n"
 
+    # We must print a newline before writing an object, except if it's the
+    # first one.
     if prefix is None:
         prefix = ""
         newline = ""
@@ -81,9 +83,10 @@ def nl_pprint(obj, where=stdout, prefix=None):
         for i in prefixes(obj, prefix):
             where.write("%s%s" % (i.prefix, i.item))
             nl_pprint(obj[i.item], where, i.children_prefix)
-    elif obj and isinstance(obj, (list)):
+    elif obj and isinstance(obj, list):
         where.write(newline)
         for i in prefixes(obj, prefix):
+            # list items are printed with their index
             where.write("%s\b[%d] " % (i.prefix, i.index))
             nl_pprint(i.item, where, i.children_prefix)
     elif obj and isinstance(obj, nla_slot):
@@ -159,8 +162,10 @@ def main():
 
     # Is this a valid pcap
     pcap_header = PcapHeader.unpack(args.pcap.read(PcapHeader.size))
-    assert pcap_header.magic == 0xa1b2c3d4, "not a pcap or unimplemented type"
-    assert pcap_header.network == 253, "pcap link type isn't netlink"
+    if pcap_header.magic != 0xa1b2c3d4:
+        psr.error("'%s': not a pcap or unimplemented type" % args.pcap.name)
+    if pcap_header.network != 253:
+        psr.error("'%s': pcap link type isn't netlink" % args.pcap.name)
 
     # Use the built in marshal for decoding
     marshal = MarshalRtnl()
