@@ -39,7 +39,6 @@ This makes them very useful for netlink-related development debugging, and they'
 ## TODO
 * Support more Python versions
 * Determine minimal pyroute2 version
-* Check for pcap endianness issues
 
 ## In action
 ```shell

@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pylint: disable=locally-disabled,invalid-name
-# FIXME endianness issues (probably)
 
 # Copyright © 2017 Étienne Noss
 # This work is free. You can redistribute it and/or modify it under the
@@ -19,7 +18,7 @@ You can indifferently use a pcap file or tcpdump's piped output, like this:
 """
 from __future__ import print_function
 import logging
-from struct import Struct, error as StructError
+from struct import Struct, unpack, error as StructError
 from pprint import pprint
 from argparse import ArgumentParser, FileType
 from collections import namedtuple
@@ -40,6 +39,7 @@ PRINT_PREFIXES = (
     ('└─', '  ')
 )
 
+# instances of this are yielded by prefixes()
 PrefixedElement = namedtuple("PrefixedElement", ("index", "prefix",
                                                  "children_prefix", "item"))
 
@@ -112,28 +112,110 @@ class NamedStruct(Struct):
         return self._ntuple(*Struct.unpack_from(self, data))
 
 
-# typedef struct pcap_hdr_s {
-#         guint32 magic_number;  /* magic number */
-#         guint16 version_major; /* major version number */
-#         guint16 version_minor; /* minor version number */
-#         gint32  thiszone;      /* GMT to local correction */
-#         guint32 sigfigs;       /* accuracy of timestamps */
-#         guint32 snaplen;       /* max length of captured packets in octets */
-#         guint32 network;       /* data link type */
-# } pcap_hdr_t;
-PcapHeader = NamedStruct("IHHiIII", "magic v_maj v_min zone sig snap network")
-
-# typedef struct pcaprec_hdr_s {
-#         guint32 ts_sec;        /* timestamp seconds */
-#         guint32 ts_usec;       /* timestamp microseconds */
-#         guint32 incl_len;      /* number of octets of packet saved in file */
-#         guint32 orig_len;      /* actual length of packet */
-# } pcaprec_hdr_t;
-PcapPacketHeader = NamedStruct("IIII", "ts_sec ts_usec incl_len orig_len")
-
-
 # direction ll_type ? family
 NetlinkCookedHeader = NamedStruct("!HH10sH", "dir ll_type dunno family")
+
+
+class PcapError(Exception):
+    """Raised by NLPcap when there are issues with the pcap file"""
+    pass
+
+
+class NLPcap(object):  # pylint: disable=too-few-public-methods
+    """Netlink pcaps parser.
+    Takes a pcap file descriptor, and allows using the resulting object as an
+    iterator that yields each packet's contents.
+    """
+    # typedef struct pcap_hdr_s {
+    #         guint32 magic_number;  /* magic number */
+    #         guint16 version_major; /* major version number */
+    #         guint16 version_minor; /* minor version number */
+    #         gint32  thiszone;      /* GMT to local correction */
+    #         guint32 sigfigs;       /* accuracy of timestamps */
+    #         guint32 snaplen;       /* max length of packets in octets */
+    #         guint32 network;       /* data link type */
+    # } pcap_hdr_t;
+    PCAP_HEADER_FMT = "IHHiIII"
+    PCAP_HEADER_FIELDS = "magic v_maj v_min zone sig snap network"
+
+    # typedef struct pcaprec_hdr_s {
+    #         guint32 ts_sec;        /* timestamp seconds */
+    #         guint32 ts_usec;       /* timestamp microseconds */
+    #         guint32 incl_len;      /* number of octets of packet in file */
+    #         guint32 orig_len;      /* actual length of packet */
+    # } pcaprec_hdr_t;
+    PKT_HEADER_FMT = "IIII"
+    PKT_HEADER_FIELDS = "ts_sec ts_usec incl_len orig_len"
+
+    def __init__(self, pcap_fd):
+        """Reads the pcap file header to check if it is valid."""
+        self.pcap_fd = pcap_fd
+        # Incremented for each packet
+        self.pkt_count = 0
+        # Read the header to check the magic number, which also happens to tell
+        # us the pcap file's endianness
+        header_data = self.pcap_fd.read(24)  # sizeof(pcap_hdr_t)
+        # The first 4 bytes of the file are the magic number
+        magic = unpack("I", header_data[:4])[0]
+        if magic == 0xa1b2c3d4:  # Little-endian
+            endianness = "<"
+        elif magic == 0xd4c3b2a1:  # Big-endian
+            endianness = ">"
+        else:
+            raise PcapError("not a pcap or unimplemented type (0x%x)" % magic)
+
+        # Use the right parsers for the pcap's endianness
+        pcap_header_cls = NamedStruct(endianness + self.PCAP_HEADER_FMT,
+                                      self.PCAP_HEADER_FIELDS)
+        self.pkt_header_cls = NamedStruct(endianness + self.PKT_HEADER_FMT,
+                                          self.PKT_HEADER_FIELDS)
+
+        # Check the pcap type
+        pcap_header = pcap_header_cls.unpack(header_data)
+        if pcap_header.network != 253:
+            raise PcapError("pcap link type isn't netlink")
+
+    def __iter__(self):
+        """Yields the contents valid netlink packets in the pcap file."""
+        while True:
+            self.pkt_count += 1
+            pkt_header_data = self.pcap_fd.read(self.pkt_header_cls.size)
+            if len(pkt_header_data) < self.pkt_header_cls.size:
+                LOG.info("reached EOF")
+                break
+            pkt_hdr = self.pkt_header_cls.unpack(pkt_header_data)
+
+            # Check that whole packets were captured
+            if pkt_hdr.incl_len < pkt_hdr.orig_len:
+                LOG.warn("[packet %d] incomplete (%d/%d bytes), skipping",
+                         self.pkt_count, pkt_hdr.incl_len, pkt_hdr.orig_len)
+                continue
+            if pkt_hdr.incl_len <= NetlinkCookedHeader.size:
+                # skip empty or too small packets
+                LOG.debug("[packet %d] too small (%d bytes), skipped",
+                          self.pkt_count, pkt_hdr.incl_len)
+                continue
+
+            # Read data from the packet
+            pkt_data = self.pcap_fd.read(pkt_hdr.incl_len)
+
+            # Read a netlink header
+            nl_hdr = NetlinkCookedHeader.unpack_from(pkt_data)
+            pkt_data = pkt_data[NetlinkCookedHeader.size:]
+
+            # we only want rtnetlink packets
+            # TODO: parse other packet types ?
+            if nl_hdr.family != 0x0000:
+                LOG.debug("[packet %d] unhandled netlink type 0x%04x, skipped",
+                          self.pkt_count, nl_hdr.family)
+                continue
+            # Should not happen because the link type for the capture
+            # is already netlink
+            if nl_hdr.ll_type != 0x0338:
+                LOG.info("[packet %d] not a Netlink packet, skipped",
+                         self.pkt_count)
+                continue
+            yield pkt_data
 
 
 def main():
@@ -160,12 +242,11 @@ def main():
 
     LOG.setLevel(args.log_level.upper())
 
-    # Is this a valid pcap
-    pcap_header = PcapHeader.unpack(args.pcap.read(PcapHeader.size))
-    if pcap_header.magic != 0xa1b2c3d4:
-        psr.error("'%s': not a pcap or unimplemented type" % args.pcap.name)
-    if pcap_header.network != 253:
-        psr.error("'%s': pcap link type isn't netlink" % args.pcap.name)
+    # Open the pcap file (read its header)
+    try:
+        pcap_file = NLPcap(args.pcap)
+    except PcapError as pce:
+        psr.error("%r: %s" % (args.pcap.name, pce))
 
     # Use the built in marshal for decoding
     marshal = MarshalRtnl()
@@ -173,51 +254,14 @@ def main():
     # The function that will be used for printing
     print_func = pprint if args.pprint else nl_pprint
 
-    # Loop as long as we don't hit EOF
-    pkt_count = 0
-    while True:
-        pkt_count += 1
-        # Read a pcap packet header
-        raw_header = args.pcap.read(PcapPacketHeader.size)
-        if len(raw_header) < PcapPacketHeader.size:
-            LOG.info("reached EOF")
-            break
-
-        pkt_hdr = PcapPacketHeader.unpack(raw_header)
-        # Check that whole packets were captured
-        if pkt_hdr.incl_len < pkt_hdr.orig_len:
-            LOG.warn("[packet %d] incomplete (%d/%d bytes), skipping",
-                     pkt_count, pkt_hdr.incl_len, pkt_hdr.orig_len)
-            continue
-        if pkt_hdr.incl_len <= NetlinkCookedHeader.size:
-            # skip empty or too small packets
-            LOG.debug("[packet %d] too small (%d bytes), skipped",
-                      pkt_hdr.pkt_count, pkt_hdr.incl_len)
-            continue
-
-        # Read data from the packet
-        pkt_data = args.pcap.read(pkt_hdr.incl_len)
-
-        # Read a netlink header
-        nl_hdr = NetlinkCookedHeader.unpack_from(pkt_data)
-        pkt_data = pkt_data[NetlinkCookedHeader.size:]
-
-        # we only want rtnetlink packets
-        # TODO: parse other packet types ?
-        if nl_hdr.family != 0x0000:
-            LOG.debug("[packet %d] unhandled netlink type 0x%04x, skipped",
-                      pkt_count, nl_hdr.family)
-            continue
-        # Should not happen as the link type for the capture is already netlink
-        if nl_hdr.ll_type != 0x0338:
-            LOG.info("[packet %d] not a Netlink packet, skipped", pkt_count)
-            continue
-
+    # Loop over the pcap file
+    for packet in pcap_file:
         # Parse the packet content and display all contained messages
         try:
-            messages = marshal.parse(pkt_data)
+            messages = marshal.parse(packet)
         except StructError:
-            LOG.warn("[packet %d] could not parse %r", pkt_count, pkt_data)
+            LOG.warn("[packet %d] could not parse %r",
+                     pcap_file.pkt_count, packet)
             continue
 
         for msg_num, msg in enumerate(messages, start=1):
@@ -226,7 +270,7 @@ def main():
                 continue
 
             LOG.info("[packet %d] message %d (%s)",
-                     pkt_count, msg_num, msg_type)
+                     pcap_file.pkt_count, msg_num, msg_type)
             print_func(msg)
 
 
