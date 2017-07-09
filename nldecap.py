@@ -191,6 +191,7 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
             pkt_header_data = self.pcap_fd.read(self.pkt_header_cls.size)
             if len(pkt_header_data) < self.pkt_header_cls.size:
                 LOG.info("reached EOF")
+                self.pkt_count -= 1
                 break
             pkt_hdr = self.pkt_header_cls.unpack(pkt_header_data)
 
