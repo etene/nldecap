@@ -32,6 +32,7 @@ LOG.addHandler(logging.StreamHandler())
 LOG.setLevel(logging.INFO)
 
 LOG_LEVELS = ("debug", "info", "warn", "warning")
+PCAP_HDR_SIZE = 24  # sizeof(pcap_hdr_t)
 MSG_MAP = {k: v.__name__ for k, v in MarshalRtnl.msg_map.items()}
 MSG_TYPES = set(MSG_MAP.values())
 PRINT_PREFIXES = (
@@ -154,7 +155,9 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
         self.pkt_count = 0
         # Read the header to check the magic number, which also happens to tell
         # us the pcap file's endianness
-        header_data = self.pcap_fd.read(24)  # sizeof(pcap_hdr_t)
+        header_data = self.pcap_fd.read(PCAP_HDR_SIZE)
+        if len(header_data) < PCAP_HDR_SIZE:
+            raise PcapError("Empty file or truncated header")
         # The first 4 bytes of the file are the magic number
         magic = unpack("I", header_data[:4])[0]
         if magic == 0xa1b2c3d4:  # Little-endian
