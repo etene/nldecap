@@ -175,7 +175,16 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
         if pcap_header.network != 253:
             raise PcapError("pcap link type isn't netlink")
 
+        # Prime the packet iterator
+        self._packets = self._yield_packets()
+
     def __iter__(self):
+        return self._packets
+
+    def next(self):
+        return self._packets.next()
+
+    def _yield_packets(self):
         """Yields the contents valid netlink packets in the pcap file."""
         while True:
             self.pkt_count += 1
