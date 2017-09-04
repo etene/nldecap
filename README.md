@@ -4,13 +4,13 @@
 `nldecap` allows you to see what's happening over the netlink interface, in a human-readable way.
 
 ## Requirements
-* python 2.7
+* Python 2.7
 * A recent [pyroute2](https://github.com/svinota/pyroute2)
 
 ## Basic Usage
 `./nldecap.py <pcap file> [filter [filter ...]]`
 
-See `./nlprint -h` for all options and their help.
+See `./nldecap.py -h` for all options and their help.
 
 ### The pcap file
 `nldecap` takes a pcap file as its first argument, or `-` for standard input.
@@ -30,7 +30,7 @@ Valid filters at the time of writing are `ifinfmsg`, `ifaddrmsg`, `ndtmsg`, `tcm
 
 Netlink Monitoring interfaces allow capturing traffic over netlink sockets with traditional packet capture tools.
 
-This makes them very useful for netlink-related development debugging, and they're also easy to setup:
+This makes them very useful for netlink-related troubleshooting, and they're also easy to setup:
 ```shell
 # ip link add nlmon0 type nlmon
 # ip link set nlmon0 up
@@ -39,6 +39,7 @@ This makes them very useful for netlink-related development debugging, and they'
 ## TODO
 * Support more Python versions
 * Determine minimal pyroute2 version
+* More tests
 
 ## In action
 ```shell
