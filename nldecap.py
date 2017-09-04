@@ -231,7 +231,7 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
             yield pkt_data
 
 
-def main():
+def main(args):
     """Parse arguments, read the pcap and parse nl packets with pyroute2"""
     psr = ArgumentParser(description=__doc__.splitlines()[0])
     psr.add_argument("pcap", type=FileType("rb"),
@@ -248,7 +248,7 @@ def main():
     psr.add_argument("filter", nargs="*",
                      help="Only display messages of this type. "
                           "Can be specified multiple times.")
-    args = psr.parse_args()
+    args = psr.parse_args(args)
     for i in args.filter:
         if i not in MSG_TYPES:
             psr.error("Invalid filter '%s' (choose from %s)" % (i, MSG_TYPES))
@@ -285,7 +285,9 @@ def main():
             LOG.info("[packet %d] message %d (%s)",
                      pcap_file.pkt_count, msg_num, msg_type)
             print_func(msg)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main(sys.argv[1:]))
