@@ -1,7 +1,9 @@
-# nldecap
+# nldecap [![Build Status](https://travis-ci.org/etene/nldecap.svg?branch=master)](https://travis-ci.org/etene/nldecap)
+
 *Pretty-printing for netlink monitoring device captures.*
 
 `nldecap` allows you to see what's happening over the netlink interface, in a human-readable way.
+
 
 ## Requirements
 * Python 2.7
