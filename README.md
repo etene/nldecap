@@ -38,6 +38,12 @@ This makes them very useful for netlink-related troubleshooting, and they're als
 # ip link set nlmon0 up
 ```
 
+or with pyroute2:
+```python
+ipr = IPRoute()
+ipr.link("add", ifname="nlmon0", kind="nlmon", state="up")
+```
+
 ## TODO
 * Support more Python versions
 * Determine minimal pyroute2 version
