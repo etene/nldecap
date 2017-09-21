@@ -24,17 +24,40 @@ from argparse import ArgumentParser, FileType
 from collections import namedtuple
 from sys import stdout
 from pyroute2.netlink.rtnl.marshal import MarshalRtnl
-from pyroute2.netlink import nla_slot
+from pyroute2.netlink.nlsocket import Marshal
+from pyroute2.ipset import IPSet
+from pyroute2.netlink import nla_slot, NETLINK_ROUTE, NETLINK_NETFILTER
 
-
+# Logging config
 LOG = logging.getLogger("nldecap")
 LOG.addHandler(logging.StreamHandler())
 LOG.setLevel(logging.INFO)
-
 LOG_LEVELS = ("debug", "info", "warn", "warning")
-PCAP_HDR_SIZE = 24  # sizeof(pcap_hdr_t)
-MSG_MAP = {k: v.__name__ for k, v in MarshalRtnl.msg_map.items()}
-MSG_TYPES = set(MSG_MAP.values())
+
+
+# Use pyroute2's built in marshals for decoding
+class MarshalNfnl(Marshal):
+    """There's no Marshal subclass for netfilter messages, create one here"""
+    def __init__(self):
+        super(MarshalNfnl, self).__init__()
+        self.msg_map.update(IPSet().marshal.msg_map)
+        # TODO: nftables
+
+
+# each family has its marshal to decode messages (they're family-specific)
+# TODO: other families
+MARSHALS = {
+    NETLINK_ROUTE: MarshalRtnl(),
+    NETLINK_NETFILTER: MarshalNfnl(),
+}
+
+# Maps families and message types to their name for display & filter purposes
+MSG_MAP = {family: {msgtype: handler.__name__
+                    for msgtype, handler
+                    in marshal.msg_map.items()}
+           for family, marshal
+           in MARSHALS.items()}
+
 PRINT_PREFIXES = (
     ('├─', '│ '),
     ('└─', '  ')
@@ -148,6 +171,8 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
     PKT_HEADER_FMT = "IIII"
     PKT_HEADER_FIELDS = "ts_sec ts_usec incl_len orig_len"
 
+    PCAP_HDR_SIZE = 24  # sizeof(pcap_hdr_t)
+
     def __init__(self, pcap_fd):
         """Reads the pcap file header to check if it is valid."""
         self.pcap_fd = pcap_fd
@@ -155,8 +180,8 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
         self.pkt_count = 0
         # Read the header to check the magic number, which also happens to tell
         # us the pcap file's endianness
-        header_data = self.pcap_fd.read(PCAP_HDR_SIZE)
-        if len(header_data) < PCAP_HDR_SIZE:
+        header_data = self.pcap_fd.read(self.PCAP_HDR_SIZE)
+        if len(header_data) < self.PCAP_HDR_SIZE:
             raise PcapError("Empty file or truncated header")
         # The first 4 bytes of the file are the magic number
         magic = unpack("I", header_data[:4])[0]
@@ -188,7 +213,9 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
         return self._packets.next()
 
     def _yield_packets(self):
-        """Yields the contents valid netlink packets in the pcap file."""
+        """For each valid netlink packet in the pcap file, yield its family
+           and contents.
+        """
         while True:
             self.pkt_count += 1
             pkt_header_data = self.pcap_fd.read(self.pkt_header_cls.size)
@@ -216,19 +243,13 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
             nl_hdr = NetlinkCookedHeader.unpack_from(pkt_data)
             pkt_data = pkt_data[NetlinkCookedHeader.size:]
 
-            # we only want rtnetlink packets
-            # TODO: parse other packet types ?
-            if nl_hdr.family != 0x0000:
-                LOG.debug("[packet %d] unhandled netlink type 0x%04x, skipped",
-                          self.pkt_count, nl_hdr.family)
-                continue
             # Should not happen because the link type for the capture
             # is already netlink
             if nl_hdr.ll_type != 0x0338:
                 LOG.info("[packet %d] not a Netlink packet, skipped",
                          self.pkt_count)
                 continue
-            yield pkt_data
+            yield nl_hdr.family, pkt_data
 
 
 def main(args):
@@ -245,13 +266,7 @@ def main(args):
                           "for each packet, 'debug' prints information about "
                           "skipped packets, 'warn' only prints packet or "
                           "message decoding errors.")
-    psr.add_argument("filter", nargs="*",
-                     help="Only display messages of this type. "
-                          "Can be specified multiple times.")
     args = psr.parse_args(args)
-    for i in args.filter:
-        if i not in MSG_TYPES:
-            psr.error("Invalid filter '%s' (choose from %s)" % (i, MSG_TYPES))
 
     LOG.setLevel(args.log_level.upper())
 
@@ -261,29 +276,27 @@ def main(args):
     except PcapError as pce:
         psr.error("%r: %s" % (args.pcap.name, pce))
 
-    # Use the built in marshal for decoding
-    marshal = MarshalRtnl()
-
     # The function that will be used for printing
     print_func = pprint if args.pprint else nl_pprint
 
     # Loop over the pcap file
-    for packet in pcap_file:
+    for family, packet in pcap_file:
         # Parse the packet content and display all contained messages
         try:
-            messages = marshal.parse(packet)
+            messages = MARSHALS[family].parse(packet)
         except StructError:
-            LOG.warn("[packet %d] could not parse %r",
-                     pcap_file.pkt_count, packet)
+            LOG.warning("[packet %d] could not parse %r",
+                        pcap_file.pkt_count, packet)
+            continue
+        except KeyError:
+            LOG.warning("[packet %d] unknown family 0x%04x",
+                        pcap_file.pkt_count, family)
             continue
 
         for msg_num, msg in enumerate(messages, start=1):
-            msg_type = MSG_MAP.get(msg["header"]["type"], "unknown type")
-            if args.filter and msg_type not in args.filter:
-                continue
-
-            LOG.info("[packet %d] message %d (%s)",
-                     pcap_file.pkt_count, msg_num, msg_type)
+            msg_type = MSG_MAP[family].get(msg["header"]["type"], "unknown type")
+            LOG.info("[packet %d] family %04x, message %d (%s)",
+                     pcap_file.pkt_count, family, msg_num, msg_type)
             print_func(msg)
     return 0
 

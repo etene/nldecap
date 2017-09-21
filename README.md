@@ -10,7 +10,7 @@
 * A recent [pyroute2](https://github.com/svinota/pyroute2)
 
 ## Basic Usage
-`./nldecap.py <pcap file> [filter [filter ...]]`
+`./nldecap.py <pcap file or - for stdin>`
 
 See `./nldecap.py -h` for all options and their help.
 
@@ -22,11 +22,6 @@ This file is typically obtained by capturing on a [nlmon](#nlmon-interfaces) int
 # tcpdump -i nlmon0 -U -w - | ./nldecap.py -
 ```
 The `-U` argument to `tcpdump` makes its packet output unbuffered, which means packets will be displayed immediately upon reception and not after a buffer-induced delay.
-
-### Filters
-Filters can be specified as positional arguments after the filename to limit the displayed message types. These map directly to pyroute2's message types.
-
-Valid filters at the time of writing are `ifinfmsg`, `ifaddrmsg`, `ndtmsg`, `tcmsg`, `fibmsg`, `ndmsg`, `rtmsg`.
 
 ## `nlmon` interfaces
 

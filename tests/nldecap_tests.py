@@ -34,11 +34,11 @@ class NLPcapTests(unittest.TestCase):
         for pcapfile in "two_packets_be.pcap", "two_packets_le.pcap":
             with open_pcap(pcapfile) as fd:
                 pcap = nldecap.NLPcap(fd)
-                packet = next(pcap)
+                family, packet = next(pcap)
                 # The first packet's payoad is 20 bytes long
                 self.assertEquals(len(packet), 20)
 
-                packet2 = next(pcap)
+                family2, packet2 = next(pcap)
                 # The second packet's payoad is 256 bytes long
                 self.assertEquals(len(packet2), 256)
 
@@ -80,7 +80,7 @@ class ScriptTests(unittest.TestCase):
     def test_basic_usage(self):
         """main() called with a simple pcap must return 0"""
         ret = self.call_main(get_pcap_path("two_packets_le.pcap"))
-        self.assertEquals(ret, 0)
+        self.assertEqual(ret, 0)
 
     def test_non_netlink_pcap(self):
         """main() called with a non-netlink pcap must exit unsuccessfully"""
@@ -91,16 +91,6 @@ class ScriptTests(unittest.TestCase):
         """main() called without arguments must exit unsuccessfully"""
         with self.assertRaises(SystemExit):
             self.call_main()
-
-    def test_filter(self):
-        """main() called with a valid pcap and filter must return 0"""
-        with self.assertRaises(SystemExit):
-            self.call_main(get_pcap_path("two_packets_le.pcap"), "rtnl")
-
-    def test_bad_filter(self):
-        """main() called with an invalid filter must exit unsuccessfully"""
-        with self.assertRaises(SystemExit):
-            self.call_main(get_pcap_path("two_packets_le.pcap"), "yolo")
 
 
 if __name__ == '__main__':
