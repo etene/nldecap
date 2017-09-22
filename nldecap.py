@@ -24,9 +24,11 @@ from argparse import ArgumentParser, FileType
 from collections import namedtuple
 from sys import stdout
 from pyroute2.netlink.rtnl.marshal import MarshalRtnl
+from pyroute2.netlink.diag import MarshalDiag
 from pyroute2.netlink.nlsocket import Marshal
 from pyroute2.ipset import IPSet
-from pyroute2.netlink import nla_slot, NETLINK_ROUTE, NETLINK_NETFILTER
+from pyroute2.netlink import nla_slot, NETLINK_ROUTE, NETLINK_NETFILTER, \
+                                       NETLINK_SOCK_DIAG, NETLINK_GENERIC
 
 # Logging config
 LOG = logging.getLogger("nldecap")
@@ -49,6 +51,15 @@ class MarshalNfnl(Marshal):
 MARSHALS = {
     NETLINK_ROUTE: MarshalRtnl(),
     NETLINK_NETFILTER: MarshalNfnl(),
+    NETLINK_SOCK_DIAG: MarshalDiag(),
+    NETLINK_GENERIC: Marshal(),
+}
+
+FAMILIES = {
+    NETLINK_ROUTE: "route",
+    NETLINK_NETFILTER: "netfilter",
+    NETLINK_SOCK_DIAG: "diagnostic",
+    NETLINK_GENERIC: "generic",
 }
 
 # Maps families and message types to their name for display & filter purposes
@@ -252,6 +263,34 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
             yield nl_hdr.family, pkt_data
 
 
+def parse_filters(filters):
+    """Takes the commandline given filters and turns them into a dictionary
+    where keys are allowed families and values are allowed messages for the
+    given family. Empty values means all messages are allowed for this family.
+    """
+    # Need to address families by their name and not their number
+    inverted_families = {v: k for k, v in FAMILIES.items()}
+    allowed = {}
+    for f in filters:
+        # family.message
+        family, _, msg = map(str.strip, f.partition("."))
+        try:
+            num_family = inverted_families[family]
+        except KeyError as ker:
+            raise ValueError("Invalid family %s" % ker)
+        # Allow this family
+        allowed.setdefault(num_family, set())
+        if msg:
+            msg_types = MSG_MAP[num_family].values()
+            if msg not in msg_types:
+                raise ValueError("'%s' is not a valid message type for %s" %
+                                 (msg, family))
+            allowed[num_family].add(msg)
+        else:
+            msg = None
+    return allowed
+
+
 def main(args):
     """Parse arguments, read the pcap and parse nl packets with pyroute2"""
     psr = ArgumentParser(description=__doc__.splitlines()[0])
@@ -266,9 +305,32 @@ def main(args):
                           "for each packet, 'debug' prints information about "
                           "skipped packets, 'warn' only prints packet or "
                           "message decoding errors.")
+    psr.add_argument("-f", "--filter", metavar="family.message", nargs="*",
+                     help="filter to match packets against. Providing only the "
+                          "family will cause all messages from this family to "
+                          "be displayed. Can be specified multiple times. "
+                          "Giving without argument shows available families "
+                          "and associated messages.")
     args = psr.parse_args(args)
 
     LOG.setLevel(args.log_level.upper())
+
+    # Filter handling
+    if args.filter == []:
+        # -f given without arguments, show available filters
+        LOG.info("available families and messages:")
+        for fam, msgs in MSG_MAP.items():
+            print(FAMILIES[fam])
+            for msg in set(msgs.values()):
+                print(" - ", msg)
+        sys.exit(0)
+    elif args.filter:
+        try:
+            filters = parse_filters(args.filter)
+        except ValueError as ver:
+            psr.error(ver)
+    else:
+        filters = None
 
     # Open the pcap file (read its header)
     try:
@@ -295,8 +357,19 @@ def main(args):
 
         for msg_num, msg in enumerate(messages, start=1):
             msg_type = MSG_MAP[family].get(msg["header"]["type"], "unknown type")
-            LOG.info("[packet %d] family %04x, message %d (%s)",
-                     pcap_file.pkt_count, family, msg_num, msg_type)
+            if filters:
+                try:
+                    if filters[family] and msg_type not in filters[family]:
+                        # there are messsage types allowed for this family,
+                        # but this one is not
+                        continue
+                except KeyError:
+                    # family not in filters
+                    continue
+
+            LOG.info("[packet %d] %s, message %d (%s)",
+                     pcap_file.pkt_count, FAMILIES[family], msg_num, msg_type)
+
             print_func(msg)
     return 0
 
