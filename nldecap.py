@@ -220,8 +220,10 @@ class NLPcap(object):  # pylint: disable=too-few-public-methods
     def __iter__(self):
         return self._packets
 
-    def next(self):
-        return self._packets.next()
+    def __next__(self):
+        return next(self._packets)
+
+    next = __next__
 
     def _yield_packets(self):
         """For each valid netlink packet in the pcap file, yield its family
