@@ -13,3 +13,4 @@ script:
   - PYTHONPATH=. python tests/nldecap_tests.py
   # 1 = fatal error, 2 = error, 32 = usage error
   - (pylint nldecap.py; exit $(($? & $((1 + 2 + 32)))))
+  - pycodestyle --max-line-length=80 nldecap.py

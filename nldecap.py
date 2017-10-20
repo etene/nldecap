@@ -358,7 +358,8 @@ def main(args):
             continue
 
         for msg_num, msg in enumerate(messages, start=1):
-            msg_type = MSG_MAP[family].get(msg["header"]["type"], "unknown type")
+            msg_type = MSG_MAP[family].get(msg["header"]["type"],
+                                           "unknown type")
             if filters:
                 try:
                     if filters[family] and msg_type not in filters[family]:
