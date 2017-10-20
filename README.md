@@ -6,7 +6,7 @@
 
 
 ## Requirements
-* Python 2.7
+* Python 2.7+
 * A recent [pyroute2](https://github.com/svinota/pyroute2)
 
 ## Basic Usage
@@ -40,7 +40,6 @@ ipr.link("add", ifname="nlmon0", kind="nlmon", state="up")
 ```
 
 ## TODO
-* Support more Python versions
 * Determine minimal pyroute2 version
 * More tests
 
