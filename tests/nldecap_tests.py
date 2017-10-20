@@ -34,11 +34,11 @@ class NLPcapTests(unittest.TestCase):
         for pcapfile in "two_packets_be.pcap", "two_packets_le.pcap":
             with open_pcap(pcapfile) as fd:
                 pcap = nldecap.NLPcap(fd)
-                family, packet = next(pcap)
+                _, packet = next(pcap)
                 # The first packet's payoad is 20 bytes long
                 self.assertEquals(len(packet), 20)
 
-                family2, packet2 = next(pcap)
+                _, packet2 = next(pcap)
                 # The second packet's payoad is 256 bytes long
                 self.assertEquals(len(packet2), 256)
 

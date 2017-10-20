@@ -10,7 +10,12 @@ install:
   - pip install -r requirements.txt -r tests/requirements.txt
 
 script:
+  # Unit tests
   - PYTHONPATH=. python tests/nldecap_tests.py
-  # 1 = fatal error, 2 = error, 32 = usage error
+
+  # linters
+  # Pylint exit codes contain 1 on fatal errors, 2 on errors and 32 on usage errors
   - (pylint nldecap.py; exit $(($? & $((1 + 2 + 32)))))
+  - (pylint tests/nldecap_tests.py; exit $(($? & $((1 + 2 + 32)))))
   - pycodestyle --max-line-length=80 nldecap.py
+  - pycodestyle --max-line-length=80 tests/nldecap_tests.py
