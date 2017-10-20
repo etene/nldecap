@@ -8,7 +8,9 @@ python:
   - "3.6"
 
 install:
-  - pip install -r requirements.txt
+  - pip install -r requirements.txt -r tests/requirements.txt
 
 script:
   - PYTHONPATH=. python tests/nldecap_tests.py
+  # 1 = fatal error, 2 = error, 32 = usage error
+  - (pylint nldecap.py; exit $(($? & $((1 + 2 + 32)))))
