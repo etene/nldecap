@@ -22,7 +22,7 @@ from struct import Struct, unpack, error as StructError
 from pprint import pprint
 from argparse import ArgumentParser, FileType
 from collections import namedtuple
-from sys import stdout
+from sys import stdout, version_info
 from pyroute2.netlink.rtnl.marshal import MarshalRtnl
 from pyroute2.netlink.diag import MarshalDiag
 from pyroute2.netlink.nlsocket import Marshal
@@ -316,6 +316,10 @@ def main(args):
     args = psr.parse_args(args)
 
     LOG.setLevel(args.log_level.upper())
+
+    if version_info.major > 2 and args.pcap.fileno() == 0:
+        # stdin is in text mode in python3, got to use the underlying buffer
+        args.pcap = args.pcap.buffer
 
     # Filter handling
     if args.filter == []:
