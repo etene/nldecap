@@ -42,7 +42,7 @@ class MarshalNfnl(Marshal):
     """There's no Marshal subclass for netfilter messages, create one here"""
     def __init__(self):
         super(MarshalNfnl, self).__init__()
-        self.msg_map.update(IPSet().marshal.msg_map)
+        self.msg_map.update(IPSet.policy)
         # TODO: nftables
 
 
