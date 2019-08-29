@@ -29,6 +29,7 @@ from pyroute2.netlink.nlsocket import Marshal
 from pyroute2.ipset import IPSet
 from pyroute2.netlink import nla_slot, NETLINK_ROUTE, NETLINK_NETFILTER, \
                                        NETLINK_SOCK_DIAG, NETLINK_GENERIC
+from pyroute2.netlink.generic import wireguard
 
 # Logging config
 LOG = logging.getLogger("nldecap")
@@ -45,6 +46,12 @@ class MarshalNfnl(Marshal):
         self.msg_map.update(IPSet.policy)
         # TODO: nftables
 
+class MarshalGeneric(Marshal):
+    def __init__(self):
+        super(MarshalGeneric, self).__init__()
+        # Ugly, but it's either that or we must open a netlink socket
+        # to get the message type id
+        self.msg_map[24] = wireguard.wgmsg
 
 # each family has its marshal to decode messages (they're family-specific)
 # TODO: other families
@@ -52,7 +59,7 @@ MARSHALS = {
     NETLINK_ROUTE: MarshalRtnl(),
     NETLINK_NETFILTER: MarshalNfnl(),
     NETLINK_SOCK_DIAG: MarshalDiag(),
-    NETLINK_GENERIC: Marshal(),
+    NETLINK_GENERIC: MarshalGeneric(),
 }
 
 FAMILIES = {
