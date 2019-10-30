@@ -29,6 +29,7 @@ from pyroute2.netlink.nlsocket import Marshal
 from pyroute2.ipset import IPSet
 from pyroute2.netlink import nla_slot, NETLINK_ROUTE, NETLINK_NETFILTER, \
                                        NETLINK_SOCK_DIAG, NETLINK_GENERIC
+from pyroute2.netlink.generic import wireguard
 
 # Logging config
 LOG = logging.getLogger("nldecap")
@@ -46,13 +47,21 @@ class MarshalNfnl(Marshal):
         # TODO: nftables
 
 
+class MarshalGeneric(Marshal):
+    def __init__(self):
+        super(MarshalGeneric, self).__init__()
+        # Ugly, but it's either that or we must open a netlink socket
+        # to get the message type id
+        self.msg_map[24] = wireguard.wgmsg
+
+
 # each family has its marshal to decode messages (they're family-specific)
 # TODO: other families
 MARSHALS = {
     NETLINK_ROUTE: MarshalRtnl(),
     NETLINK_NETFILTER: MarshalNfnl(),
     NETLINK_SOCK_DIAG: MarshalDiag(),
-    NETLINK_GENERIC: Marshal(),
+    NETLINK_GENERIC: MarshalGeneric(),
 }
 
 FAMILIES = {
@@ -308,9 +317,9 @@ def main(args):
                           "skipped packets, 'warn' only prints packet or "
                           "message decoding errors.")
     psr.add_argument("-f", "--filter", metavar="family.message", nargs="*",
-                     help="filter to match packets against. Providing only the "
-                          "family will cause all messages from this family to "
-                          "be displayed. Can be specified multiple times. "
+                     help="filter to match packets against. Providing only the"
+                          " family will cause all messages from this family to"
+                          " be displayed. Can be specified multiple times. "
                           "Giving without argument shows available families "
                           "and associated messages.")
     args = psr.parse_args(args)
