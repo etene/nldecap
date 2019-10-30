@@ -46,12 +46,14 @@ class MarshalNfnl(Marshal):
         self.msg_map.update(IPSet.policy)
         # TODO: nftables
 
+
 class MarshalGeneric(Marshal):
     def __init__(self):
         super(MarshalGeneric, self).__init__()
         # Ugly, but it's either that or we must open a netlink socket
         # to get the message type id
         self.msg_map[24] = wireguard.wgmsg
+
 
 # each family has its marshal to decode messages (they're family-specific)
 # TODO: other families
@@ -315,9 +317,9 @@ def main(args):
                           "skipped packets, 'warn' only prints packet or "
                           "message decoding errors.")
     psr.add_argument("-f", "--filter", metavar="family.message", nargs="*",
-                     help="filter to match packets against. Providing only the "
-                          "family will cause all messages from this family to "
-                          "be displayed. Can be specified multiple times. "
+                     help="filter to match packets against. Providing only the"
+                          " family will cause all messages from this family to"
+                          " be displayed. Can be specified multiple times. "
                           "Giving without argument shows available families "
                           "and associated messages.")
     args = psr.parse_args(args)
